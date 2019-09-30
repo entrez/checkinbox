@@ -1,0 +1,114 @@
+#!/usr/local/bin/python3
+
+import imaplib
+from pathlib import Path
+import os
+import json
+from sys import argv
+
+config_dir = '{home}/.config/inboxcount'.format(home=Path.home())
+
+if not os.path.isdir(config_dir):
+    create_dir(config_dir)
+
+
+def log_error(message, **kwargs):
+    # {{{
+    # keyword argument `level` can range from 0 to 4. defaults to 0
+    lvl_descriptions = ['', 'debug: ', 'info: ', 'warning: ', 'error: ']
+    lvl = kwargs.get('level', 0)
+    lvl = (not (lvl + 3 | lvl) >> 3) * lvl # force lvl to 0 if it is invalid (i.e. >4 or <0)
+    log_lvl = lvl_descriptions[lvl]
+
+    print('[{checkinbox}] {level}{error}'.format(
+        checkinbox = os.path.basename(__file__),
+        level = log_lvl,
+        error = message
+    ))
+
+    from datetime import datetime
+    with open('{config}/errors.log'.format(config=config_dir), 'a') as errorlog:
+        errorlog.write('{timestamp:.0f} {level}{error}\n'.format(
+            timestamp = datetime.timestamp(datetime.now()),
+            level = log_lvl,
+            error = message
+        ))
+    # }}}
+
+
+def create_dir(new_dir):
+    # {{{
+    try:
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
+    except OSError:
+        log_error('failed to create new directory {}'.format(new_dir), level=3)
+    # }}}
+
+
+args = argv
+include_count = '-c' in args or '--count' in args
+
+"""
+config file at ~/.config/inboxcount/accounts.json should contain
+a dictionary/associative array with usernames/passwords, viz.:
+    {
+        "test@example.com": "aiowtuiabwdlkasp",
+        "webmaster@personal.com": "oauiodqutappquiv"
+    }
+"""
+accts_file = '{config}/accounts.json'.format(config=config_dir)
+if not os.path.isfile(accts_file):
+    error_msg = 'unable to find login info - {filepath} is required'.format(
+        checkinbox=os.path.basename(__file__),
+        filepath=accts_file
+    )
+    log_error(error_msg, level=4)
+    exit(1)
+
+with open(accts_file) as f:
+    accounts = json.load(f)
+
+msg_count = 0
+for address, passwd in accounts.items():
+    try:
+        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        mail.login(address, passwd)
+        mail.list()
+        mail.select('inbox')
+        result, data = mail.search(None, 'UNSEEN')
+
+        mail.logout()
+        msg_count += len(data[0])
+    except imaplib.IMAP4.error as ex:
+        error_msg = 'error accessing inbox for {curracct} ({details})'.format(
+            curracct = address,
+            details = ex.args[0].decode()
+        )
+        log_error(error_msg)
+
+
+storage_file = '{config}/num'.format(config=config_dir)
+if os.path.isfile(storage_file):
+    with open(storage_file, 'r') as f:
+        try:
+            previous_num = int(f.read().split('\n')[0].strip())
+        except:
+            previous_num = 0
+else:
+    create_dir(os.path.dirname(storage_file))
+    previous_num = 0
+
+new_count = msg_count - previous_num
+
+if new_count > 0:
+    out_msg = 'You have {0:n} new emails.\n'.format(new_count) \
+        if include_count else 'You have new mail.\n'
+    with open('/tmp/inboxct', 'w') as f:
+        f.write(out_msg)
+
+with open(storage_file, 'w') as f:
+    f.write(str(msg_count))
+
+
+# vim:fdm=marker:sts=4:ts=4:sw=4:et
