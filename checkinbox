@@ -101,11 +101,24 @@ else:
 
 new_count = msg_count - previous_num
 
+output_file = '/tmp/inboxct'
 if new_count > 0:
     out_msg = 'You have {0:n} new emails in {1:n} accounts.\n'.format(new_count, len(accounts)) \
         if include_count else 'You have new mail.\n'
-    with open('/tmp/inboxct', 'w') as f:
+    with open(output_file, 'w') as f:
         f.write(out_msg)
+else if new_count < 0:
+    # if there are fewer unread messages than last checked,
+    # it indicates someone has opened the email account; we
+    # can safely delete the `you have new mail' message.
+
+    # actually, i guess someone could open their inbox, read
+    # 5 messages, and then another one could come in right
+    # after that - in that case we'd fail to inform the user.
+    # but i think such a situation is less likely than checkinbox
+    # reporting new mail when the user has already seen it.
+    if os.path.isfile(output_file):
+        os.remove(output_file)
 
 with open(storage_file, 'w') as f:
     f.write(str(msg_count))
