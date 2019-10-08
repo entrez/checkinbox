@@ -107,7 +107,7 @@ if new_count > 0:
         if include_count else 'You have new mail.\n'
     with open(output_file, 'w') as f:
         f.write(out_msg)
-else if new_count < 0:
+elif new_count < 0:
     # if there are fewer unread messages than last checked,
     # it indicates someone has opened the email account; we
     # can safely delete the `you have new mail' message.
