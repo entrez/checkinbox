@@ -51,11 +51,22 @@ include_count = '-c' in args or '--count' in args
 
 """
 config file at ~/.config/inboxcount/accounts.json should contain
-a dictionary/associative array with usernames/passwords, viz.:
-    {
-        "test@example.com": "aiowtuiabwdlkasp",
-        "webmaster@personal.com": "oauiodqutappquiv"
-    }
+a list of dictionaries with user information, viz.:
+    [
+        {
+            "username": "test@example.com",
+            "password": "aiowtuiabwdlkasp",
+            "server": "imap.gmail.com",
+            "security": "SSL"
+        },
+        {
+            "username": "webmaster@personal.com",
+            "password": "oauiodqutappquiv",
+            "server": "mail.personal.com",
+            "port": 1290,
+            "security": "STARTTLS"
+        }
+    ]
 """
 accts_file = '{config}/accounts.json'.format(config=config_dir)
 if not os.path.isfile(accts_file):
@@ -70,9 +81,29 @@ with open(accts_file) as f:
     accounts = json.load(f)
 
 msg_count = 0
-for address, passwd in accounts.items():
+for account in accounts:
+    address = account.get("username")
+    passwd = account.get("pass")
+    server = account.get("server")
+    if address is None:
+        log_error("missing address in accounts.json")
+        continue
+    elif passwd is None:
+        log_error("missing password for {} in accounts.json".format(address))
+        continue
+    elif server is None:
+        log_error("missing server for {} in accounts.json".format(address))
+        continue
+    security = account.get("security", "none")
+    port = account.get("port", 993 if security == "SSL" else 143)
     try:
-        mail = imaplib.IMAP4_SSL('imap.gmail.com')
+        if security == "SSL":
+            mail = imaplib.IMAP4_SSL(server, port = port)
+        elif security == "STARTTLS":
+            mail = imaplib.IMAP4(server, port = port)
+            mail.starttls()
+        else:
+            mail = imaplib.IMAP4(server, port = port)
         mail.login(address, passwd)
         mail.list()
         mail.select('inbox')
@@ -80,7 +111,7 @@ for address, passwd in accounts.items():
 
         mail.logout()
         msg_count += len(data[0])
-    except imaplib.IMAP4.error as ex:
+    except (imaplib.IMAP4.error,imaplib.abort,ssl.SSLError) as ex:
         error_msg = 'error accessing inbox for {curracct} ({details})'.format(
             curracct = address,
             details = ex.args[0].decode()
